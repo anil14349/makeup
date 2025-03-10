@@ -13,6 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize models first to avoid timeouts
+from app.models.init_models import initialize_models
+
 # Import application modules
 from app.models.cosmetics_model import analyze_image_with_timing
 from app.utils.product_utils import (
@@ -58,6 +61,9 @@ def main():
         initial_sidebar_state=APP_CONFIG["sidebar_state"]
     )
     
+    # Initialize DeepFace models
+    models_ready = initialize_models()
+    
     # Apply custom styles
     st.markdown(MAIN_STYLES, unsafe_allow_html=True)
     
@@ -72,50 +78,66 @@ def main():
     uploaded_file = st.file_uploader("Upload a face photo:", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
-        # Display the uploaded image and analyze it
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.image(uploaded_file, caption="Your Photo", use_container_width=True)
-        
-        with col2:
-            with st.spinner("Analyzing your skin tone..."):
-                # Open and convert the image
-                img = Image.open(io.BytesIO(uploaded_file.read())).convert("RGB")
+        try:
+            # Process the image safely
+            img_bytes = uploaded_file.getvalue()
+            if not img_bytes:
+                st.error("The uploaded file appears to be empty. Please try uploading a different image.")
+                return
                 
-                # Analyze the image
-                cosmetics, proc_time = analyze_image_with_timing(img)
+            # Read image for display
+            try:
+                # First, try to display the image directly
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    st.image(img_bytes, caption="Your Photo", use_container_width=True)
+                
+                with col2:
+                    with st.spinner("Analyzing your skin tone..."):
+                        # Open and convert the image for processing
+                        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                        
+                        # Analyze the image
+                        cosmetics, proc_time = analyze_image_with_timing(img)
+                    
+                    if proc_time > 0:
+                        st.caption(f"Analysis completed in {proc_time:.2f} seconds")
             
-            if proc_time > 0:
-                st.caption(f"Analysis completed in {proc_time:.2f} seconds")
-        
-        # Check for errors in analysis
-        has_error = False
-        for product in cosmetics:
-            if "error" in product:
-                st.error(f"😕 {product['error']}")
-                has_error = True
-                break
-        
-        if not has_error:
-            # Display sidebar with filters
-            filters = display_filter_sidebar(
-                cosmetics,
-                get_unique_brands,
-                get_unique_product_types,
-                reset_all_filters
-            )
-            
-            # Group and filter products
-            grouped_products = group_products_by_category(
-                cosmetics, 
-                max_per_category=filters["products_per_category"],
-                brand_filter=filters["brand_filter"],
-                product_type_filter=filters["product_type_filter"]
-            )
-            
-            # Display product recommendations
-            display_product_recommendations(grouped_products, filters)
+                # Check for errors in analysis
+                has_error = False
+                for product in cosmetics:
+                    if "error" in product:
+                        st.error(f"😕 {product['error']}")
+                        has_error = True
+                        break
+                
+                if not has_error:
+                    # Display sidebar with filters
+                    filters = display_filter_sidebar(
+                        cosmetics,
+                        get_unique_brands,
+                        get_unique_product_types,
+                        reset_all_filters
+                    )
+                    
+                    # Group and filter products
+                    grouped_products = group_products_by_category(
+                        cosmetics, 
+                        max_per_category=filters["products_per_category"],
+                        brand_filter=filters["brand_filter"],
+                        product_type_filter=filters["product_type_filter"]
+                    )
+                    
+                    # Display product recommendations
+                    display_product_recommendations(grouped_products, filters)
+            except Exception as e:
+                st.error(f"Error processing image: {str(e)}")
+                st.info("Please try uploading a different image.")
+                logger.error(f"Image processing error: {str(e)}")
+        except Exception as e:
+            st.error(f"Unexpected error: {str(e)}")
+            logger.error(f"Unexpected error: {str(e)}")
     else:
         # Display the welcome screen and sidebar info
         display_sidebar_info()

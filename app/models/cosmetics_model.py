@@ -2,6 +2,7 @@
 Cosmetics prediction model handling.
 This module manages loading and using the DeepFace model for skin tone analysis.
 """
+import os
 import time
 import logging
 import numpy as np
@@ -15,6 +16,9 @@ logger = logging.getLogger(__name__)
 CosmeticProduct = Dict[str, str]
 CosmeticRecommendation = List[CosmeticProduct]
 AnalysisResult = Union[CosmeticRecommendation, List[Dict[str, str]]]
+
+# Set model directory to a writable location for Streamlit Cloud
+os.environ["DEEPFACE_HOME"] = "/tmp/.deepface"
 
 try:
     from deepface import DeepFace
@@ -95,22 +99,57 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
         # Convert PIL Image to OpenCV format
         image_cv = convert_pil_to_cv2(image)
         
-        # Analyze face attributes
-        result = DeepFace.analyze(
-            image_cv, 
-            actions=['race'], 
-            enforce_detection=False,
-            detector_backend='opencv'
-        )
+        # Make sure image is not too large to avoid memory issues
+        max_size = 800
+        h, w = image_cv.shape[:2]
+        if h > max_size or w > max_size:
+            scale = max_size / max(h, w)
+            new_size = (int(w * scale), int(h * scale))
+            import cv2
+            image_cv = cv2.resize(image_cv, new_size)
+            logger.info(f"Resized image from {w}x{h} to {new_size[0]}x{new_size[1]}")
+        
+        # Analyze face attributes with more robust error handling
+        try:
+            # First try with normal detection
+            result = DeepFace.analyze(
+                image_cv, 
+                actions=['race'], 
+                enforce_detection=False,
+                detector_backend='opencv',
+                silent=True
+            )
+        except Exception as inner_e:
+            logger.warning(f"First analysis attempt failed: {str(inner_e)}")
+            # Fall back to a different detector backend
+            try:
+                result = DeepFace.analyze(
+                    image_cv, 
+                    actions=['race'], 
+                    enforce_detection=False,
+                    detector_backend='ssd',
+                    silent=True
+                )
+            except Exception as e2:
+                logger.error(f"Second analysis attempt failed: {str(e2)}")
+                # If still failing, use a default medium skin tone
+                logger.info("Using default skin tone 'medium' as fallback")
+                return COSMETIC_DATABASE["medium"]
         
         dominant_race = result[0]['dominant_race']
         skin_tone = map_skin_tone(dominant_race)
+        
+        # Free up memory
+        import gc
+        gc.collect()
         
         return COSMETIC_DATABASE[skin_tone]
 
     except Exception as e:
         logger.error(f"Face analysis failed: {str(e)}")
-        return [{"error": f"Face analysis failed: {str(e)}"}]
+        # In case of error, return medium tone recommendations as fallback
+        logger.info("Using default skin tone 'medium' as fallback due to error")
+        return COSMETIC_DATABASE.get("medium", [{"error": f"Face analysis failed: {str(e)}"}])
 
 def analyze_image_with_timing(image: Image.Image) -> Tuple[AnalysisResult, float]:
     """
@@ -135,4 +174,6 @@ def analyze_image_with_timing(image: Image.Image) -> Tuple[AnalysisResult, float
         return predictions, processing_time
     except Exception as e:
         logger.error("Error in cosmetic suggestion: %s", str(e))
-        return [{"error": f"Processing failed: {str(e)}"}], 0 
+        # In case of error, return medium tone recommendations as fallback
+        from app.data.cosmetics_db import COSMETIC_DATABASE
+        return COSMETIC_DATABASE.get("medium", [{"error": f"Processing failed: {str(e)}"}]), 0 
