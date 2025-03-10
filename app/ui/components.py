@@ -155,11 +155,11 @@ def display_welcome_screen() -> None:
     st.info("👆 Please upload a selfie to get started")
     
     # Display sample recommendations
-    st.write("### Sample Recommendations")
-    st.write("Here are examples of the types of products we recommend based on skin tone:")
+    #st.write("### Sample Recommendations")
+    #st.write("Here are examples of the types of products we recommend based on skin tone:")
     
-    for category in SAMPLE_CATEGORIES:
-        st.write(f"- **{category}**")
+    #for category in SAMPLE_CATEGORIES:
+    #    st.write(f"- **{category}**")
     
     st.write("""
     Upload a photo to get personalized recommendations from top brands like:
