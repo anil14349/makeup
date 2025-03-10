@@ -4,9 +4,9 @@ IS_STREAMLIT_CLOUD = true
 
 [theme]
 primaryColor = "#e83e8c"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f8f9fa"
-textColor = "#212529"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#fafafa"
 font = "sans-serif"
 
 [server]
