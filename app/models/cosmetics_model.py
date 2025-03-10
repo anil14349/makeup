@@ -6,7 +6,6 @@ import os
 import time
 import logging
 import numpy as np
-import random
 from PIL import Image
 from typing import Optional, Any, Dict, Tuple, List, Union
 
@@ -21,20 +20,13 @@ AnalysisResult = Union[CosmeticRecommendation, List[Dict[str, str]]]
 # Set model directory to a writable location for Streamlit Cloud
 os.environ["DEEPFACE_HOME"] = "/tmp/.deepface"
 
-# Check if we're running on Streamlit Cloud
-STREAMLIT_CLOUD = os.environ.get("IS_STREAMLIT_CLOUD", False)
-if STREAMLIT_CLOUD:
-    # Use mock implementation for Streamlit Cloud
-    logger.info("Running on Streamlit Cloud, using mock implementation")
+# Try to import DeepFace
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+except ImportError:
+    logger.warning("DeepFace not available. Will return fallback recommendations.")
     DEEPFACE_AVAILABLE = False
-else:
-    # Try to import DeepFace for local development
-    try:
-        from deepface import DeepFace
-        DEEPFACE_AVAILABLE = True
-    except ImportError:
-        logger.warning("DeepFace not available. Using mock implementation.")
-        DEEPFACE_AVAILABLE = False
 
 def load_model() -> Optional[Any]:
     """
@@ -88,23 +80,6 @@ def map_skin_tone(dominant_race: str) -> str:
     }
     return RACE_TO_SKIN_TONE.get(dominant_race.lower(), "medium")
 
-def mock_predict_cosmetics() -> CosmeticRecommendation:
-    """
-    Generate mock cosmetics recommendations for when DeepFace is unavailable.
-    
-    Returns:
-        List of recommended cosmetic products
-    """
-    from app.data.cosmetics_db import COSMETIC_DATABASE
-    
-    # Choose a random skin tone for mock predictions
-    skin_tones = ["fair", "medium", "dark"]
-    selected_tone = random.choice(skin_tones)
-    
-    logger.info(f"Using mock predictions with skin tone: {selected_tone}")
-    
-    return COSMETIC_DATABASE[selected_tone]
-
 def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResult:
     """
     Analyze skin tone and suggest cosmetics.
@@ -118,10 +93,9 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
     """
     from app.data.cosmetics_db import COSMETIC_DATABASE
     
-    # Use mock implementation if DeepFace is not available
     if not DEEPFACE_AVAILABLE:
-        logger.info("DeepFace not available, using mock predictions")
-        return mock_predict_cosmetics()
+        logger.error("DeepFace not available. Returning medium skin tone recommendations.")
+        return COSMETIC_DATABASE["medium"]
     
     try:
         # Convert PIL Image to OpenCV format
@@ -133,14 +107,13 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
         if h > max_size or w > max_size:
             scale = max_size / max(h, w)
             new_size = (int(w * scale), int(h * scale))
-            # Import OpenCV only when needed
             import cv2
             image_cv = cv2.resize(image_cv, new_size)  # type: ignore
             logger.info(f"Resized image from {w}x{h} to {new_size[0]}x{new_size[1]}")
         
         # Analyze face attributes with more robust error handling
         try:
-            # First try with normal detection
+            # Try with default detection
             result = DeepFace.analyze(
                 image_cv, 
                 actions=['race'], 
@@ -150,20 +123,14 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
             )
         except Exception as inner_e:
             logger.warning(f"First analysis attempt failed: {str(inner_e)}")
-            # Fall back to a different detector backend
-            try:
-                result = DeepFace.analyze(
-                    image_cv, 
-                    actions=['race'], 
-                    enforce_detection=False,
-                    detector_backend='ssd',
-                    silent=True
-                )
-            except Exception as e2:
-                logger.error(f"Second analysis attempt failed: {str(e2)}")
-                # If still failing, use a default medium skin tone
-                logger.info("Using default skin tone 'medium' as fallback")
-                return COSMETIC_DATABASE["medium"]
+            # If that fails, try with a different detector backend
+            result = DeepFace.analyze(
+                image_cv, 
+                actions=['race'], 
+                enforce_detection=False,
+                detector_backend='ssd',
+                silent=True
+            )
         
         dominant_race = result[0]['dominant_race']
         skin_tone = map_skin_tone(dominant_race)
@@ -177,8 +144,7 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
     except Exception as e:
         logger.error(f"Face analysis failed: {str(e)}")
         # In case of error, return medium tone recommendations as fallback
-        logger.info("Using default skin tone 'medium' as fallback due to error")
-        return COSMETIC_DATABASE.get("medium", [{"error": f"Face analysis failed: {str(e)}"}])
+        return COSMETIC_DATABASE["medium"]
 
 def analyze_image_with_timing(image: Image.Image) -> Tuple[AnalysisResult, float]:
     """
@@ -194,7 +160,6 @@ def analyze_image_with_timing(image: Image.Image) -> Tuple[AnalysisResult, float
         start_time = time.time()
         
         # Call predict_cosmetics directly with None as model
-        # since load_model() returns None anyway
         predictions = predict_cosmetics(None, image)
         
         processing_time = time.time() - start_time
@@ -205,4 +170,4 @@ def analyze_image_with_timing(image: Image.Image) -> Tuple[AnalysisResult, float
         logger.error("Error in cosmetic suggestion: %s", str(e))
         # In case of error, return medium tone recommendations as fallback
         from app.data.cosmetics_db import COSMETIC_DATABASE
-        return COSMETIC_DATABASE.get("medium", [{"error": f"Processing failed: {str(e)}"}]), 0 
+        return COSMETIC_DATABASE["medium"], 0 

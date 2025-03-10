@@ -1,7 +1,3 @@
-[env]
-# Set flag for Streamlit Cloud detection
-IS_STREAMLIT_CLOUD = true
-
 [theme]
 primaryColor = "#e83e8c"
 backgroundColor = "#0e1117"
