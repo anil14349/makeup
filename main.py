@@ -91,7 +91,7 @@ def main():
                 col1, col2 = st.columns([1, 1])
                 
                 with col1:
-                    st.image(img_bytes, caption="Your Photo", use_container_width=True)
+                    st.image(img_bytes, caption="Your Photo", width=None)
                 
                 with col2:
                     with st.spinner("Analyzing your skin tone..."):
