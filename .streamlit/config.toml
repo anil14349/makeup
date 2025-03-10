@@ -1,0 +1,15 @@
+[env]
+# Set flag for Streamlit Cloud detection
+IS_STREAMLIT_CLOUD = true
+
+[theme]
+primaryColor = "#e83e8c"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8f9fa"
+textColor = "#212529"
+font = "sans-serif"
+
+[server]
+# Enable more verbose error messages
+enableCORS = false
+enableXsrfProtection = false 

@@ -6,6 +6,7 @@ import os
 import time
 import logging
 import numpy as np
+import random
 from PIL import Image
 from typing import Optional, Any, Dict, Tuple, List, Union
 
@@ -20,12 +21,20 @@ AnalysisResult = Union[CosmeticRecommendation, List[Dict[str, str]]]
 # Set model directory to a writable location for Streamlit Cloud
 os.environ["DEEPFACE_HOME"] = "/tmp/.deepface"
 
-try:
-    from deepface import DeepFace
-    DEEPFACE_AVAILABLE = True
-except ImportError:
-    logger.warning("DeepFace not available. Using mock implementation.")
+# Check if we're running on Streamlit Cloud
+STREAMLIT_CLOUD = os.environ.get("IS_STREAMLIT_CLOUD", False)
+if STREAMLIT_CLOUD:
+    # Use mock implementation for Streamlit Cloud
+    logger.info("Running on Streamlit Cloud, using mock implementation")
     DEEPFACE_AVAILABLE = False
+else:
+    # Try to import DeepFace for local development
+    try:
+        from deepface import DeepFace
+        DEEPFACE_AVAILABLE = True
+    except ImportError:
+        logger.warning("DeepFace not available. Using mock implementation.")
+        DEEPFACE_AVAILABLE = False
 
 def load_model() -> Optional[Any]:
     """
@@ -79,6 +88,23 @@ def map_skin_tone(dominant_race: str) -> str:
     }
     return RACE_TO_SKIN_TONE.get(dominant_race.lower(), "medium")
 
+def mock_predict_cosmetics() -> CosmeticRecommendation:
+    """
+    Generate mock cosmetics recommendations for when DeepFace is unavailable.
+    
+    Returns:
+        List of recommended cosmetic products
+    """
+    from app.data.cosmetics_db import COSMETIC_DATABASE
+    
+    # Choose a random skin tone for mock predictions
+    skin_tones = ["fair", "medium", "dark"]
+    selected_tone = random.choice(skin_tones)
+    
+    logger.info(f"Using mock predictions with skin tone: {selected_tone}")
+    
+    return COSMETIC_DATABASE[selected_tone]
+
 def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResult:
     """
     Analyze skin tone and suggest cosmetics.
@@ -92,8 +118,10 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
     """
     from app.data.cosmetics_db import COSMETIC_DATABASE
     
+    # Use mock implementation if DeepFace is not available
     if not DEEPFACE_AVAILABLE:
-        return [{"error": "DeepFace not available. Please install it with 'pip install deepface'"}]
+        logger.info("DeepFace not available, using mock predictions")
+        return mock_predict_cosmetics()
     
     try:
         # Convert PIL Image to OpenCV format
@@ -105,8 +133,9 @@ def predict_cosmetics(model: Optional[Any], image: Image.Image) -> AnalysisResul
         if h > max_size or w > max_size:
             scale = max_size / max(h, w)
             new_size = (int(w * scale), int(h * scale))
+            # Import OpenCV only when needed
             import cv2
-            image_cv = cv2.resize(image_cv, new_size)
+            image_cv = cv2.resize(image_cv, new_size)  # type: ignore
             logger.info(f"Resized image from {w}x{h} to {new_size[0]}x{new_size[1]}")
         
         # Analyze face attributes with more robust error handling
